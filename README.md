@@ -1,44 +1,48 @@
-# AuthBoard - Mini PHP Auth Project
+# AuthBoard — Mini Social Web App 
 
-PHP version: 8.0+ (tested with PHP 8)
-A small teaching project demonstrating:
-- Registration & Login
-- Sessions
-- Simple Router
-- Namespaces & PSR-4 autoloading (composer)
-- Password hashing (password_hash)
-- Email sending (Mailtrap + PHPMailer)
-- Basic folder structure and simple styling
+AuthBoard is a lightweight social platform built in PHP and MySQL — designed for web development practice labs.  
+It includes user authentication, post creation with optional images, profile sessions, and the ability to **edit posts within 24 hours**.
 
-## Requirements
-- PHP 8.0+
-- Composer (for dependencies)
-- MySQL (or MariaDB)
-- Local webserver (XAMPP, Laragon, etc.)
+---
 
-## Setup
-1. Unzip the project into your web root (or point your vhost to `AuthBoard/public`).
-2. Copy `.env.example` to `.env` and fill values (DB and Mailtrap credentials).
-3. Create the database and import `sql/schema.sql`.
-   Example:
-   ```sql
-   CREATE DATABASE authboard;
-   USE authboard;
-   -- then import the schema.sql file
-   ```
-4. Install composer dependencies:
-   ```bash
-   composer install
-   ```
-5. Start the server (if using built-in PHP server for testing):
-   ```bash
-   cd public
-   php -S localhost:8000
-   ```
-6. Visit `http://localhost:8000` (or your configured vhost).
+## 🚀 Features
 
-## Notes for instructors
-- Students should update `.env` with their Mailtrap sandbox credentials.
-- The project uses a tiny .env loader (no external dotenv package required).
-- Encourage students to read files under `app/` to understand flow.
+### 🧑‍💻 Authentication
+- User Registration with form validation  
+- Secure Login using password hashing (`password_hash`, `password_verify`)  
+- Session-based authentication and logout  
+- Basic input sanitization and security  
+
+### 📝 Posts & Feed
+- Create text-based posts from the dashboard  
+- Optional image upload (up to 4MB)  
+- View all posts in a shared feed (all users visible)  
+- Each post shows author name, email, and creation time  
+- Responsive Tailwind UI for modern look and feel  
+
+### ✏️ Edit Post (New!)
+- Users can edit their **own posts** within 24 hours of posting  
+- Edited posts show an “(edited)” indicator  
+- Validation for ownership and time window  
+- Simple edit form pre-filled with existing content  
+
+### 🖼️ Image Upload
+- Supports PNG, JPG, GIF, WEBP uploads  
+- Uploaded images stored in `/public/uploads`  
+- Displayed inline in feed with responsive design  
+
+### 🎨 UI / UX
+- Clean modern Tailwind CSS design  
+- Responsive layout for mobile and desktop  
+- Dynamic image preview before upload  
+- Fade-in animations and card-style UI
+### ✨ Usage
+- Register or login.
+- Create a new post with or without image.
+- View posts from all users in the dashboard feed.
+- If you’re the author of a post (and it’s <24 hours old), an Edit button will appear.
+- Click Edit → change content → save → post updates and shows “edited”.
+### 👨‍💻 Author
+- Developed by: Tamim Amin
+- Course: Web Practice Lab / PHP & MySQL
 
