@@ -2,7 +2,7 @@
 $title = 'Edit Post • AuthBoard';
 ob_start();
 ?>
-    <div class="max-w-2xl mx-auto fade-up bg-white p-6 rounded-xl card-shadow">
+    <div class="max-w-2xl mx-auto fade-up show bg-white p-6 rounded-xl card-shadow">
         <h2 class="text-lg font-semibold mb-3">Edit post</h2>
 
         <form method="POST" action="/post/edit" class="space-y-4">

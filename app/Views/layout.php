@@ -1,8 +1,16 @@
+<?php
+if (session_status() === PHP_SESSION_NONE) session_start();
+if (empty($_SESSION['csrf'])) {
+    try { $_SESSION['csrf'] = bin2hex(random_bytes(16)); }
+    catch (Exception $e) { $_SESSION['csrf'] = uniqid('', true); }
+}
+?>
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf']) ?>">
     <title><?= htmlspecialchars($title ?? 'AuthBoard') ?></title>
 
 
@@ -50,25 +58,76 @@
         <small>AuthBoard — demo project • Built for learning</small>
     </footer>
 </div>
-
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        document.querySelectorAll('.fade-up').forEach((el, i) => {
-            setTimeout(()=> el.classList.add('show'), 60 * i);
-        });
-    });
+    document.addEventListener('DOMContentLoaded', function () {
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
-    function handleImagePreview(input, previewEl) {
-        const file = input.files && input.files[0];
-        if (!file) { previewEl.innerHTML = ''; previewEl.classList.add('hidden'); return; }
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            previewEl.innerHTML = '<img src="'+e.target.result+'" alt="image preview" class="rounded max-w-full max-h-60 object-contain border"/>';
-            previewEl.classList.remove('hidden');
-        };
-        reader.readAsDataURL(file);
-    }
-    window.handleImagePreview = handleImagePreview;
+        function setButtonState(btn, liked, count) {
+            btn.setAttribute('data-liked', liked ? '1' : '0');
+            btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
+            const icon = btn.querySelector('.heart-icon');
+            if (icon) {
+                // use attribute fill (SVG) so styling toggles cleanly
+                icon.setAttribute('fill', liked ? 'currentColor' : 'none');
+            }
+            const span = btn.querySelector('.like-count');
+            if (span) span.textContent = String(count);
+        }
+
+        // Attach handlers to all like buttons
+        document.querySelectorAll('.like-btn').forEach(btn => {
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+
+                const postId = this.getAttribute('data-post-id');
+                if (!postId) return;
+
+                const currentlyLiked = this.getAttribute('data-liked') === '1';
+                const countEl = this.querySelector('.like-count');
+                const currentCount = parseInt(countEl?.textContent || '0', 10);
+
+                // optimistic UI update
+                setButtonState(this, !currentlyLiked, currentlyLiked ? Math.max(currentCount - 1, 0) : currentCount + 1);
+
+                const fd = new FormData();
+                fd.append('post_id', postId);
+
+                try {
+                    const res = await fetch('/post/like', {
+                        method: 'POST',
+                        body: fd,
+                        headers: { 'X-CSRF-Token': csrf } // server reads HTTP_X_CSRF_TOKEN
+                    });
+
+                    if (!res.ok) {
+                        // non-JSON response or non-2xx
+                        throw new Error('Network response not OK: ' + res.status);
+                    }
+
+                    const json = await res.json();
+                    if (json && json.ok) {
+                        setButtonState(this, !!json.liked, Number(json.count || 0));
+                    } else {
+                        // revert optimistic UI
+                        setButtonState(this, currentlyLiked, currentCount);
+                        const msg = (json && json.error) ? json.error : 'Could not update like.';
+                        alert(msg);
+                        console.error('Like error:', json);
+                    }
+                } catch (err) {
+                    // revert UI on error
+                    setButtonState(this, currentlyLiked, currentCount);
+                    console.error('Network or parsing error while toggling like:', err);
+                    alert('Network error while toggling like.');
+                }
+            });
+        });
+
+        // for debugging: log how many like buttons found
+        console.log('like buttons attached:', document.querySelectorAll('.like-btn').length);
+    });
 </script>
+
+
 </body>
 </html>

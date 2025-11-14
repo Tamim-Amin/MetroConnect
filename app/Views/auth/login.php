@@ -12,7 +12,7 @@ ob_start();
             </div>
         </div>
 
-        <div class="fade-up bg-white p-8 rounded-xl card-shadow">
+        <div class="fade-up show bg-white p-8 rounded-xl card-shadow">
             <h3 class="text-lg font-semibold mb-4">Login to your account</h3>
 
             <form method="POST" action="/login" class="space-y-4">

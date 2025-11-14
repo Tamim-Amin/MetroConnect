@@ -160,4 +160,57 @@ class DashboardController extends Controller {
         }
     }
 
+    public function toggleLike() {
+        $user = \App\Core\Session::get('user');
+        header('Content-Type: application/json');
+
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+            return;
+        }
+
+
+        \App\Core\Session::start();
+
+        $csrfHeader = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        $sessionCsrf = \App\Core\Session::get('csrf') ?? ($_SESSION['csrf'] ?? null);
+        if (empty($sessionCsrf) || $csrfHeader !== $sessionCsrf) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token']);
+            return;
+        }
+
+
+        $postId = (int)($_POST['post_id'] ?? 0);
+        if ($postId <= 0) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'Invalid post id']);
+            return;
+        }
+
+        // ensure post exists
+        $post = \App\Models\Post::findById($postId);
+        if (!$post) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'Post not found']);
+            return;
+        }
+
+        try {
+            $liked = \App\Models\Like::toggle((int)$user['id'], $postId);
+            $count = \App\Models\Like::countForPost($postId);
+
+            echo json_encode([
+                'ok' => true,
+                'liked' => $liked,
+                'count' => $count,
+                'post_id' => $postId
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'Server error']);
+        }
+    }
+
 }
