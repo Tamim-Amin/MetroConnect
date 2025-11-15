@@ -160,36 +160,111 @@ class DashboardController extends Controller {
         }
     }
 
+
+// inside App\Controllers\DashboardController class
     public function toggleLike() {
-        $user = \App\Core\Session::get('user');
+        // ensure session is started
+        if (session_status() === PHP_SESSION_NONE) session_start();
+
         header('Content-Type: application/json');
 
+        // quick helper to respond and exit
+        $respond = function(int $code, array $payload) {
+            http_response_code($code);
+            echo json_encode($payload);
+            exit;
+        };
+
+        // user check
+        $user = \App\Core\Session::get('user');
+        if (!$user) {
+            $respond(401, ['ok' => false, 'error' => 'Unauthorized: not logged in', 'received' => $_POST]);
+        }
+
+        // read incoming values
+        // Accept CSRF either via header X-CSRF-Token or via POST param (for debug)
+        $csrfHeader = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf'] ?? '');
+        $postId = isset($_POST['post_id']) ? (int)$_POST['post_id'] : 0;
+
+        // debug info (will be sent if something bad)
+        $debug = [
+            'session_csrf' => $_SESSION['csrf'] ?? null,
+            'sent_csrf' => $csrfHeader,
+            'post_id' => $postId,
+            'session_user' => $user
+        ];
+
+        // csrf check
+        if (empty($_SESSION['csrf']) || $csrfHeader !== $_SESSION['csrf']) {
+            error_log('Like: invalid csrf. Debug: ' . json_encode($debug));
+            $respond(400, ['ok' => false, 'error' => 'Invalid CSRF token', 'debug' => $debug]);
+        }
+
+        // validate post id
+        if ($postId <= 0) {
+            error_log('Like: invalid post id. Debug: ' . json_encode($debug));
+            $respond(400, ['ok' => false, 'error' => 'Invalid post id', 'debug' => $debug]);
+        }
+
+        // ensure post exists
+        try {
+            $post = \App\Models\Post::findById($postId);
+        } catch (\Exception $e) {
+            error_log('Like: Post find error: ' . $e->getMessage());
+            $respond(500, ['ok' => false, 'error' => 'Server error finding post']);
+        }
+        if (!$post) {
+            $respond(404, ['ok' => false, 'error' => 'Post not found', 'debug' => $debug]);
+        }
+
+        // toggle like
+        try {
+            $liked = \App\Models\Like::toggle((int)$user['id'], $postId);
+            $count = \App\Models\Like::countForPost($postId);
+            $respond(200, ['ok' => true, 'liked' => (bool)$liked, 'count' => (int)$count]);
+        } catch (\Exception $e) {
+            error_log('Like toggle error: ' . $e->getMessage());
+            $respond(500, ['ok' => false, 'error' => 'Server error toggling like']);
+        }
+    }
+
+
+    public function createComment() {
+        header('Content-Type: application/json');
+        if (session_status() === PHP_SESSION_NONE) session_start();
+
+        $user = \App\Core\Session::get('user');
         if (!$user) {
             http_response_code(401);
             echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
             return;
         }
 
-
-        \App\Core\Session::start();
-
+        // CSRF
         $csrfHeader = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
-        $sessionCsrf = \App\Core\Session::get('csrf') ?? ($_SESSION['csrf'] ?? null);
-        if (empty($sessionCsrf) || $csrfHeader !== $sessionCsrf) {
+        if (empty($_SESSION['csrf']) || $csrfHeader !== $_SESSION['csrf']) {
             http_response_code(400);
             echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token']);
             return;
         }
 
-
         $postId = (int)($_POST['post_id'] ?? 0);
-        if ($postId <= 0) {
+        $parentId = isset($_POST['parent_id']) && $_POST['parent_id'] !== '' ? (int)$_POST['parent_id'] : null;
+        $content = trim((string)($_POST['content'] ?? ''));
+
+        if ($postId <= 0 || $content === '') {
             http_response_code(400);
-            echo json_encode(['ok' => false, 'error' => 'Invalid post id']);
+            echo json_encode(['ok' => false, 'error' => 'Invalid input']);
             return;
         }
 
-        // ensure post exists
+        if (mb_strlen($content) > 1000) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'Comment too long (max 1000 chars)']);
+            return;
+        }
+
+        // Ensure post exists
         $post = \App\Models\Post::findById($postId);
         if (!$post) {
             http_response_code(404);
@@ -197,20 +272,31 @@ class DashboardController extends Controller {
             return;
         }
 
-        try {
-            $liked = \App\Models\Like::toggle((int)$user['id'], $postId);
-            $count = \App\Models\Like::countForPost($postId);
+        // Optional: validate parent belongs to same post
+        if ($parentId) {
+            $parent = \App\Models\Comment::findById($parentId);
+            if (!$parent || (int)$parent['post_id'] !== $postId) {
+                http_response_code(400);
+                echo json_encode(['ok' => false, 'error' => 'Invalid parent comment']);
+                return;
+            }
+        }
 
-            echo json_encode([
-                'ok' => true,
-                'liked' => $liked,
-                'count' => $count,
-                'post_id' => $postId
-            ]);
+        try {
+            $commentId = \App\Models\Comment::create($postId, (int)$user['id'], $content, $parentId);
+            $newComment = \App\Models\Comment::findById($commentId);
+            // attach user info
+            $newComment['name'] = $user['name'];
+            $newComment['email'] = $user['email'];
+            $newComment['avatar_path'] = $user['avatar_path'] ?? null;
+
+            echo json_encode(['ok' => true, 'comment' => $newComment]);
         } catch (\Exception $e) {
+            error_log('Create comment error: ' . $e->getMessage());
             http_response_code(500);
             echo json_encode(['ok' => false, 'error' => 'Server error']);
         }
     }
+
 
 }

@@ -62,70 +62,233 @@ if (empty($_SESSION['csrf'])) {
     document.addEventListener('DOMContentLoaded', function () {
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
-        function setButtonState(btn, liked, count) {
-            btn.setAttribute('data-liked', liked ? '1' : '0');
-            btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
-            const icon = btn.querySelector('.heart-icon');
-            if (icon) {
-                // use attribute fill (SVG) so styling toggles cleanly
-                icon.setAttribute('fill', liked ? 'currentColor' : 'none');
-            }
-            const span = btn.querySelector('.like-count');
-            if (span) span.textContent = String(count);
-        }
+        // Submit comment (works for any .comment-form)
+        document.querySelectorAll('.comment-form').forEach(form => {
+            const postId = form.dataset.postId || form.querySelector('input[name="post_id"]').value;
+            const submitBtn = form.querySelector('.btn-comment');
+            submitBtn.addEventListener('click', async () => {
+                const contentEl = form.querySelector('textarea[name="content"]');
+                const parentEl = form.querySelector('input[name="parent_id"]');
+                const content = contentEl.value.trim();
+                if (!content) return alert('Comment cannot be empty.');
 
-        // Attach handlers to all like buttons
-        document.querySelectorAll('.like-btn').forEach(btn => {
-            btn.addEventListener('click', async function (e) {
-                e.preventDefault();
-
-                const postId = this.getAttribute('data-post-id');
-                if (!postId) return;
-
-                const currentlyLiked = this.getAttribute('data-liked') === '1';
-                const countEl = this.querySelector('.like-count');
-                const currentCount = parseInt(countEl?.textContent || '0', 10);
-
-                // optimistic UI update
-                setButtonState(this, !currentlyLiked, currentlyLiked ? Math.max(currentCount - 1, 0) : currentCount + 1);
+                // optimistic UI: disable button
+                submitBtn.disabled = true;
 
                 const fd = new FormData();
                 fd.append('post_id', postId);
+                fd.append('parent_id', parentEl.value || '');
+                fd.append('content', content);
 
                 try {
-                    const res = await fetch('/post/like', {
+                    const res = await fetch('/post/comment', {
                         method: 'POST',
                         body: fd,
-                        headers: { 'X-CSRF-Token': csrf } // server reads HTTP_X_CSRF_TOKEN
+                        headers: { 'X-CSRF-Token': csrf }
                     });
-
-                    if (!res.ok) {
-                        // non-JSON response or non-2xx
-                        throw new Error('Network response not OK: ' + res.status);
-                    }
-
                     const json = await res.json();
-                    if (json && json.ok) {
-                        setButtonState(this, !!json.liked, Number(json.count || 0));
+                    if (json.ok) {
+                        // append the new comment to the relevant comments-list
+                        const list = document.querySelector('#comments-for-post-' + postId);
+                        if (list) {
+                            // create element for the new comment
+                            const c = json.comment;
+                            const wrapper = document.createElement('div');
+                            wrapper.className = 'comment-item mb-3';
+                            wrapper.dataset.commentId = c.id;
+                            // if parent_id present, indent accordingly
+                            const indent = parentEl.value ? 12 : 0;
+                            wrapper.style.marginLeft = (parentEl.value ? indent + 'px' : '0px');
+
+                            wrapper.innerHTML = '<div class="text-sm"><strong>' + escapeHtml(c.name) +
+                                '</strong> <span class="text-xs text-slate-500">• ' + escapeHtml(c.created_at) +
+                                '</span></div><div class="text-sm mt-1">' + nl2br(escapeHtml(c.content)) +
+                                '</div><div class="text-xs mt-1"><a href="#" class="reply-link text-indigo-600" data-comment-id="' + c.id + '">Reply</a></div>';
+                            // if it's a reply, try to insert after parent; otherwise append
+                            if (parentEl.value) {
+                                // find parent node
+                                const parentNode = list.querySelector('[data-comment-id="' + parentEl.value + '"]');
+                                if (parentNode && parentNode.nextSibling) {
+                                    parentNode.parentNode.insertBefore(wrapper, parentNode.nextSibling);
+                                } else if (parentNode) {
+                                    parentNode.parentNode.appendChild(wrapper);
+                                } else {
+                                    list.appendChild(wrapper);
+                                }
+                            } else {
+                                list.appendChild(wrapper);
+                            }
+
+                            // clear and reset composer
+                            contentEl.value = '';
+                            parentEl.value = '';
+                            submitBtn.disabled = false;
+                        }
                     } else {
-                        // revert optimistic UI
-                        setButtonState(this, currentlyLiked, currentCount);
-                        const msg = (json && json.error) ? json.error : 'Could not update like.';
-                        alert(msg);
-                        console.error('Like error:', json);
+                        alert(json.error || 'Failed to post comment.');
+                        submitBtn.disabled = false;
                     }
                 } catch (err) {
-                    // revert UI on error
-                    setButtonState(this, currentlyLiked, currentCount);
-                    console.error('Network or parsing error while toggling like:', err);
-                    alert('Network error while toggling like.');
+                    console.error(err);
+                    alert('Network error while posting comment.');
+                    submitBtn.disabled = false;
                 }
             });
         });
 
-        // for debugging: log how many like buttons found
-        console.log('like buttons attached:', document.querySelectorAll('.like-btn').length);
+        // Reply link behavior: set parent_id of nearest comment composer
+        document.addEventListener('click', function (e) {
+            if (e.target.matches('.reply-link')) {
+                e.preventDefault();
+                const commentId = e.target.getAttribute('data-comment-id');
+                // find the closest .comment-form for this post
+                let node = e.target;
+                // climb up to find the post container (we used parent markup, but easiest: find id)
+                const postContainer = e.target.closest('[id^="comments-for-post-"]');
+                if (!postContainer) return;
+                const postId = postContainer.id.replace('comments-for-post-', '');
+                const form = document.querySelector('.comment-form[data-post-id="' + postId + '"]');
+                if (!form) return;
+                form.querySelector('input[name="parent_id"]').value = commentId;
+                const textarea = form.querySelector('textarea[name="content"]');
+                textarea.focus();
+            }
+        });
+
+        // helpers
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+        function nl2br(str) {
+            return str.replace(/\n/g, '<br/>');
+        }
     });
+</script>
+<script>
+    (function () {
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        function setButtonState(btn, liked, count) {
+            btn.setAttribute('data-liked', liked ? '1' : '0');
+            btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
+            const icon = btn.querySelector('.heart-icon');
+            if (icon) icon.setAttribute('fill', liked ? 'currentColor' : 'none');
+            const span = btn.querySelector('.like-count');
+            if (span) span.textContent = count;
+        }
+
+        // Attach via event delegation so dynamically added posts work as well
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('.like-btn');
+            if (!btn) return;
+
+            e.preventDefault();
+            const postId = btn.getAttribute('data-post-id') || null;
+            if (!postId) {
+                console.error('Like click: no postId on button', btn);
+                alert('Internal error: missing post id.');
+                return;
+            }
+
+            const currentlyLiked = btn.getAttribute('data-liked') === '1';
+            const currentCount = parseInt(btn.querySelector('.like-count')?.textContent || '0', 10);
+
+            // optimistic UI
+            setButtonState(btn, !currentlyLiked, currentlyLiked ? Math.max(currentCount-1,0) : currentCount+1);
+
+            // prepare form data
+            const fd = new FormData();
+            fd.append('post_id', postId);
+
+            // debug: print what we're about to send
+            console.log('Like: sending', { post_id: postId, csrf });
+
+            try {
+                const resp = await fetch('/post/like', {
+                    method: 'POST',
+                    body: fd,
+                    headers: { 'X-CSRF-Token': csrf }
+                });
+
+                // show network and status for debugging
+                console.log('Like: fetch complete. status=', resp.status);
+
+                const json = await resp.json();
+                console.log('Like: response json=', json);
+
+                if (!json.ok) {
+                    // revert optimistic UI
+                    setButtonState(btn, currentlyLiked, currentCount);
+                    // show server message if provided
+                    const message = json.error || 'Could not update like.';
+                    console.warn('Like error:', message, json.debug ?? '');
+                    alert(message);
+                    return;
+                }
+
+                // success — set according to server truth
+                setButtonState(btn, json.liked, json.count);
+
+            } catch (err) {
+                // revert optimistic UI
+                setButtonState(btn, currentlyLiked, currentCount);
+                console.error('Like: network or JSON error', err);
+                alert('Network error while toggling like. See console for details.');
+            }
+        });
+    })();
+</script>
+
+<script>
+    // COMMENT SYSTEM UI BEHAVIOR
+    (function () {
+
+        // Show comment box when clicking "Comment"
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.comment-toggle');
+            if (!btn) return;
+
+            const postId = btn.dataset.postId;
+            const box = document.getElementById('comment-box-' + postId);
+            if (!box) return;
+
+            box.classList.remove('hidden');
+            // Reset parent_id (new top-level comment)
+            const form = box.querySelector('form');
+            form.querySelector('input[name="parent_id"]').value = '';
+            form.querySelector('textarea[name="content"]').focus();
+        });
+
+        // When clicking "Reply" under a comment
+        document.addEventListener('click', function(e) {
+            const replyLink = e.target.closest('.reply-link');
+            if (!replyLink) return;
+
+            e.preventDefault();
+
+            const commentId = replyLink.dataset.commentId;
+
+            // Find post container
+            const commentsContainer = replyLink.closest('[id^="comments-for-post-"]');
+            const postId = commentsContainer.id.replace('comments-for-post-', '');
+
+            // Show comment box
+            const box = document.getElementById('comment-box-' + postId);
+            box.classList.remove('hidden');
+
+            // Set parent id
+            const form = box.querySelector('form');
+            form.querySelector('input[name="parent_id"]').value = commentId;
+
+            // Focus
+            form.querySelector('textarea[name="content"]').focus();
+        });
+
+    })();
 </script>
 
 

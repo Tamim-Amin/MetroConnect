@@ -41,7 +41,9 @@ $router->post('/post', fn() => $dash->createPost());
 $router->get('/logout', fn() => $auth->logout());
 $router->get('/dashboard', fn() => $dash->index());
 $router->post('/post', fn() => $dash->createPost());
+//$router->post('/post/like', fn() => $dash->toggleLike());
 $router->post('/post/like', fn() => $dash->toggleLike());
+$router->post('/post/comment', fn() => $dash->createComment());
 
 $router->get('/post/edit', fn() => $dash->editForm());
 $router->post('/post/edit', fn() => $dash->editPost());
